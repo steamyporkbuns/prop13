@@ -1,0 +1,293 @@
+---
+title: "Alameda Split Roll"
+author: "Eddie Sun"
+date: "6/6/2019"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Load packages
+```{r}
+library(tidyverse)
+library(lubridate)
+library(sp)
+library(sf)
+library(tmap)
+```
+
+
+# Load Data
+```{r}
+getwd()
+
+Parcels_06001 <- read.csv("C:/Users/edwinysun/Box/Terner Center_Summer 2019/Prop 13 Split Roll/Raw Data/LandVision/Parcels_06001.txt")
+
+Propertypoints_06001 <- read.csv("C:/Users/edwinysun/Box/Terner Center_Summer 2019/Prop 13 Split Roll/Raw Data/LandVision/Propertypoints_06001.txt", header=TRUE)
+```
+
+# Initial probing of the data
+```{r}
+Propertypoints_06001 <- Propertypoints_06001 %>% 
+  mutate(BEDROOMS = as.double(BEDROOMS))
+
+mean(Propertypoints_06001$BEDROOMS)
+
+Propertypoints_06001 %>% 
+  filter(BEDROOMS != 0) %>% 
+  summarise(mean(BEDROOMS))
+
+unique(Propertypoints_06001$BEDROOMS)
+#For properties with at least one bedroom, the average number of bedrooms is 3.18. The numbers seem to make sense.
+
+unique(Propertypoints_06001$ZONING)
+#The ZONING variable is meant to be used to report the zoned use of each parcel. However, it seems that at least for Alameda County, this variable has not been reported at all.
+```
+
+# Identifying the commercial properties using the number of bedrooms
+```{r}
+Propertypoints_06001 <- Propertypoints_06001 %>% 
+  mutate(COMMERCIAL = if_else(BEDROOMS == 0, 1, 0)
+         )
+
+Propertypoints_06001 %>% 
+  group_by(COMMERCIAL) %>% 
+                            summarise(n(), 
+                                      mean(VAL_TRANSFER), 
+                                      median(VAL_TRANSFER), 
+                                      mean(AVM_VALUE), 
+                                      median(AVM_VALUE), 
+                                      mean(ASSR_SQFT), 
+                                      median(ASSR_SQFT), 
+                                      mean(BLDG_NUMBER), 
+                                      median(BLDG_NUMBER)
+                                      )
+
+#The mean(VAL_TRANSFER) statistic says that residential properties have a 406k average sales price, while commercial properties have a 636k average sales price.
+
+#The mean(AVM_VALUE) is based on an Automated Valuation Model's estimate of property value. It seems problematic because the commercial side's value is so low compared to commercial sale price.May need to make some histograms of that variable to see what the distribution is. 
+
+#The mean and median ASSR_SQFT statistics indicate that commercial properties are larger than residential.
+
+#The mean and median BLDG_NUMBER statistics are problematic because it's saying that commercial properties have fewer than one building. May need to make some histograms of that variable to see what the distribution is. 
+
+options(scipen=10)
+ggplot(Propertypoints_06001, aes(x = factor(COMMERCIAL), y = VAL_TRANSFER)) + stat_summary(fun.y = "mean", geom = "bar", width = 0.6, fill = "steelblue") + xlab("COMMERCIAL") + ylab("Mean Transfer Value (Dollars)") + scale_y_continuous(labels = scales::comma) + coord_flip()
+
+ggsave("plot1.png", width = 5, height = 5)
+
+ggplot(Propertypoints_06001, aes(x = factor(COMMERCIAL), y = ASSR_SQFT)) + stat_summary(fun.y = "mean", geom = "bar", width = 0.6, fill = "steelblue") + xlab("COMMERCIAL") + ylab("Mean Assessed Lot Size (Square Feet)") + scale_y_continuous(labels = scales::comma) + coord_flip()
+
+ggsave("plot2.png", width = 5, height = 5)
+
+ggplot(Propertypoints_06001, aes(x = AVM_VALUE)) + geom_histogram(binwidth = 50000) + facet_wrap(~COMMERCIAL)
+#This histogram indicates that the AVM is almost never used to value the commercial properties.
+
+ggsave("plot3.png", width = 5, height = 5)
+
+ggplot(Propertypoints_06001, aes(x = BLDG_NUMBER)) + geom_histogram(binwidth = 1) + xlim(0, 4) + facet_wrap(~COMMERCIAL)
+
+ggsave("plot4.png", width = 5, height = 5)
+```
+
+# Identifying the commercial properties using the company flag
+```{r}
+unique(Propertypoints_06001$COMPANY_FLAG)
+
+Propertypoints_06001 <- Propertypoints_06001 %>% 
+  mutate(COMPANY_FLAG = if_else(COMPANY_FLAG == "Y", 1, 0))
+
+unique(Propertypoints_06001$COMPANY_FLAG)
+
+Propertypoints_06001 %>% 
+  group_by(COMPANY_FLAG) %>% summarise(n(), 
+                                       mean(VAL_TRANSFER), 
+                                       median(VAL_TRANSFER), 
+                                       mean(AVM_VALUE), 
+                                       median(AVM_VALUE), 
+                                       mean(ASSR_SQFT), 
+                                       median(ASSR_SQFT), 
+                                       mean(BLDG_NUMBER), 
+                                       median(BLDG_NUMBER)
+                                       )
+
+options(scipen=10)
+ggplot(Propertypoints_06001, aes(x = factor(COMPANY_FLAG), y = VAL_TRANSFER)) + stat_summary(fun.y = "mean", geom = "bar", width = 0.6, fill = "steelblue") + xlab("Company Flag") + ylab("Mean Transfer Value (Dollars)") + scale_y_continuous(labels = scales::comma) + coord_flip()
+
+ggsave("plot5.png", width = 5, height = 5)
+
+ggplot(Propertypoints_06001, aes(x = factor(COMPANY_FLAG), y = ASSR_SQFT)) + stat_summary(fun.y = "mean", geom = "bar", width = 0.6, fill = "steelblue") + xlab("Company Flag") + ylab("Mean Assessed Lot Size (Square Feet)") + scale_y_continuous(labels = scales::comma) + coord_flip()
+
+ggsave("plot6.png", width = 5, height = 5)
+
+ggplot(Propertypoints_06001, aes(x = AVM_VALUE)) + geom_histogram(binwidth = 50000) + facet_wrap(~COMPANY_FLAG)
+
+ggsave("plot7.png", width = 5, height = 5)
+
+ggplot(Propertypoints_06001, aes(x = BLDG_NUMBER)) + geom_histogram(binwidth = 1) + xlim(0, 4) + facet_wrap(~COMPANY_FLAG)
+
+ggsave("plot8.png", width = 5, height = 5)
+
+```
+
+# A more conservative estimate for commercial that only looks that properties that meet both the >1 bedroom criterion and the company flag criterion
+```{r}
+Propertypoints_06001 <- Propertypoints_06001 %>% 
+  mutate(TWO_CRITERIA = if_else(BEDROOMS == 0 & COMPANY_FLAG == 1, 1, 0))
+
+Propertypoints_06001 %>% 
+  group_by(TWO_CRITERIA) %>% summarise(n(), 
+                                       mean(VAL_TRANSFER), 
+                                       median(VAL_TRANSFER), 
+                                       mean(AVM_VALUE), 
+                                       median(AVM_VALUE), 
+                                       mean(ASSR_SQFT), 
+                                       median(ASSR_SQFT), 
+                                       mean(BLDG_NUMBER), 
+                                       median(BLDG_NUMBER)
+                                       )
+
+options(scipen=10)
+ggplot(Propertypoints_06001, aes(x = factor(TWO_CRITERIA), y = VAL_TRANSFER)) + stat_summary(fun.y = "mean", geom = "bar", width = 0.6, fill = "steelblue") + xlab("Two Criteria Estimate of Commercial") + ylab("Mean Transfer Value (Dollars)") + scale_y_continuous(labels = scales::comma) + coord_flip()
+
+ggsave("plot9.png", width = 5, height = 5)
+
+ggplot(Propertypoints_06001, aes(x = factor(TWO_CRITERIA), y = ASSR_SQFT)) + stat_summary(fun.y = "mean", geom = "bar", width = 0.6, fill = "steelblue") + xlab("Two Criteria Estimate of Commercial") + ylab("Mean Assessed Lot Size (Square Feet)") + scale_y_continuous(labels = scales::comma) + coord_flip()
+
+ggsave("plot10.png", width = 5, height = 5)
+
+ggplot(Propertypoints_06001, aes(x = AVM_VALUE)) + geom_histogram(binwidth = 50000) + facet_wrap(~TWO_CRITERIA)
+
+ggsave("plot11.png", width = 5, height = 5)
+
+ggplot(Propertypoints_06001, aes(x = BLDG_NUMBER)) + geom_histogram(binwidth = 1) + xlim(0, 4) + facet_wrap(~TWO_CRITERIA)
+
+ggsave("plot12.png", width = 5, height = 5)
+
+```
+
+# Additional descriptive statistics by ownership tenure
+```{r}
+#Parsing DATE_TRANSFER into mathematical format.
+glimpse(Propertypoints_06001$DATE_TRANSFER)
+Propertypoints_06001 <- Propertypoints_06001 %>% 
+  mutate(DATE_TRANSFER = 
+                          ymd(DATE_TRANSFER))
+
+#Calculating the number of years elapsed since last DATE_TRANSFER.
+Propertypoints_06001 <- Propertypoints_06001 %>% 
+  mutate(TENURE1 = difftime(today(tz = ""), DATE_TRANSFER),
+         TENURE1 = as.numeric(TENURE1)/365)
+
+glimpse(Propertypoints_06001$TENURE1)
+
+ggplot(Propertypoints_06001, aes(x = TENURE1)) + geom_histogram(binwidth = 1) + xlab("Tenure From Last Date Transfer (Years)") + facet_wrap(~COMMERCIAL) + ggtitle("Commercial, Estimated by Zero Bedrooms")
+
+ggsave("plot13.png", width = 5, height = 5)
+
+ggplot(Propertypoints_06001, aes(x = TENURE1)) + geom_histogram(binwidth = 1) + xlab("Tenure From Last Date Transfer (Years)") + facet_wrap(~COMPANY_FLAG) + ggtitle("Commercial, Estimated by Company Flag")
+
+ggsave("plot14.png", width = 5, height = 5)
+
+ggplot(Propertypoints_06001, aes(x = TENURE1)) + geom_histogram(binwidth = 1) + xlab("Tenure From Last Date Transfer (Years)") + facet_wrap(~TWO_CRITERIA) + ggtitle("Commercial, Estimated by Both Zero Bedrooms and Company Flag")
+
+ggsave("plot15.png", width = 5, height = 5)
+
+#Parsing LAST_SALE_DATE_TRANSFER into mathematical format.
+Propertypoints_06001 <- Propertypoints_06001 %>% 
+  mutate(LAST_SALE_DATE_TRANSFER = ymd(LAST_SALE_DATE_TRANSFER))
+
+#Calculating the number of years elapsed since LAST_SALE_DATE_TRANSFER
+Propertypoints_06001 <- Propertypoints_06001 %>% 
+  mutate(TENURE2 = difftime(today(tz = ""), LAST_SALE_DATE_TRANSFER),
+         TENURE2 = as.numeric(TENURE2)/365)
+
+ggplot(Propertypoints_06001, aes(x = TENURE2)) + geom_histogram(binwidth = 1) + xlab("Tenure from Last Sale Date Transfer (Years)") + facet_wrap(~COMMERCIAL) + ggtitle("Commercial, Estimated by Zero Bedrooms")
+
+ggsave("plot16.png", width = 5, height = 5)
+
+ggplot(Propertypoints_06001, aes(x = TENURE2)) + geom_histogram(binwidth = 1) + xlab("Tenure from Last Sale Date Transfer (Years)") + facet_wrap(~COMPANY_FLAG) + ggtitle("Commercial, Estimated by Company Flag")
+
+ggsave("plot17.png", width = 5, height = 5)
+
+ggplot(Propertypoints_06001, aes(x = TENURE2)) + geom_histogram(binwidth = 1) + xlab("Tenure from Last Sale Date Transfer (Years)") + facet_wrap(~TWO_CRITERIA) + ggtitle("Commercial, Estimated by Both Zero Bedrooms and Company Flag")
+
+ggsave("plot18.png", width = 5, height = 5)
+
+```
+
+# Exploring the USE_CODE_MUNI variable
+```{r}
+use_codes <- Propertypoints_06001 %>% select(USE_CODE_MUNI, USE_CODE_MUNI_DESC)
+use_codes <- unique(use_codes)
+#Generated a codebook for the use codes. 
+
+commercial_uses <- c(4300, 500, 8000, 9300, 8300, 3300, 3000, 3100, 210, 880, 9400, 8100, 4100, 3600, 201, 4200, 212, 5400, 5900, 5800, 5300, 6000, 6700, 6500, 606, 8600, 6300, 3400, 4900, 8400, 3700, 6850, 110, 9500, 9000, 8900, 3800, 202, 4500, 8400, 213, 9700, 9200, 4800, 4600, 4400, 300, 3500, 8500, 8200, 6800, 6900, 4000, 3900, 200)
+#A vector of commercial use codes
+
+Propertypoints_06001 <- Propertypoints_06001 %>% 
+    mutate(COMMERCIAL_USE = if_else(
+    USE_CODE_MUNI %in% commercial_uses, 1, 0
+                                    )
+           )
+#Indicator variable for parcels with commercial use codes.
+
+Propertypoints_06001 %>% group_by(COMMERCIAL_USE) %>% 
+  summarise(n(), 
+            mean(VAL_TRANSFER), 
+            median(VAL_TRANSFER), 
+            mean(AVM_VALUE), 
+            median(AVM_VALUE), 
+            mean(ASSR_SQFT), 
+            median(ASSR_SQFT), 
+            mean(BLDG_NUMBER), 
+            median(BLDG_NUMBER)
+            )
+#Summary statistics using the commercial use variable. 
+
+options(scipen=10)
+Propertypoints_06001 %>% filter(COMMERCIAL_USE == 0) %>% 
+  ggplot(aes(x = VAL_TRANSFER)) + geom_histogram(binwidth = 50000) + xlim(0, 2500000) + ylim(0, 30000) + ggtitle("Sale price, for non-commercial use")
+ggsave("plot19.png", width = 5, height = 5)
+
+Propertypoints_06001 %>% filter(COMMERCIAL_USE == 1) %>% 
+  ggplot(aes(x = VAL_TRANSFER)) + geom_histogram(binwidth = 50000) + xlim(0, 10000000) + ylim(0, 600) + ggtitle("Sale price, for commercial use")
+ggsave("plot20.png", width = 5, height = 5)
+
+Propertypoints_06001 %>% filter(COMMERCIAL_USE == 0) %>%
+  ggplot(aes(x = ASSR_SQFT)) + geom_histogram(binwidth = 2000) + xlim(0, 100000) + ylim(0, 30000) + ggtitle("Assessed lot size, non-commercial use")
+ggsave("plot21.png", width = 5, height = 5)
+
+Propertypoints_06001 %>% filter(COMMERCIAL_USE == 1) %>%
+  ggplot(aes(x = ASSR_SQFT)) + geom_histogram(binwidth = 2000) + xlim(0, 500000) + ylim(0, 5000) + ggtitle("Assessed lot size, commercial use")
+ggsave("plot22.png", width = 5, height = 5)
+
+Propertypoints_06001 %>% filter(COMMERCIAL_USE == 0) %>%
+  ggplot(aes(x = TENURE1)) + geom_histogram(binwidth = 1) + xlim(0, 60) + ylim(0, 30000) + ggtitle("Ownership tenure from DATE_TRANSFER, non-commercial use")
+ggsave("plot23.png", width = 5, height = 5)
+
+Propertypoints_06001 %>% filter(COMMERCIAL_USE == 1) %>%
+  ggplot(aes(x = TENURE1)) + geom_histogram(binwidth = 1) + xlim(0, 60) + ylim(0, 2000) + ggtitle("Ownership tenure from DATE_TRANSFER, commercial use")
+ggsave("plot24.png", width = 5, height = 5)
+```
+
+# GIS visualizations
+```{r}
+getwd()
+parcel_shp <- st_read("geo_export_9cace1f3-a985-4daf-aa70-8eefddd9fd1a.shp")
+#Read in parcel shapefiles downloaded from Alameda County website.
+
+Propertypoints_06001 <- left_join(Propertypoints_06001, Parcels_06001, by = c("PARCEL_APN", "PARCEL_APN"))
+#Realized that the parcel shapefiles are already in the LandVision zip file. 
+
+Propertypoints_06001 <- st_as_sf(Propertypoints_06001, wkt = "GEOM.y")
+
+Propertypoints_06001 %>% select(COMMERCIAL_USE, GEOM.y) %>% tm_shape() + tm_fill(col = "COMMERCIAL_USE", palette = "Blues")
+
+# tm_shape(Propertypoints_06001) + tm_fill(col = "ASSR_SQFT", palette = "Blues")
+```
+
